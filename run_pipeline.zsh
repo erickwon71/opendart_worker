@@ -3,7 +3,7 @@
 set -e
 set -o pipefail   # ⭐️ 핵심: 파이프 중간 실패도 실패로 인식
 
-LOG_DIR="$HOME/Project/dart_finance/logs"
+LOG_DIR="$HOME/Project/dart_finance/log"
 mkdir -p "$LOG_DIR"
 
 LOG_FILE="$LOG_DIR/pipeline_$(date +%Y%m%d_%H%M%S).log"
