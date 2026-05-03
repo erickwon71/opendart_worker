@@ -52,4 +52,8 @@ log/
 
 # Data
 opendart.sqlite
+analytics.duckdb
 data/raw/filings
+
+# Output
+output/
