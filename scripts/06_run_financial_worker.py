@@ -207,6 +207,12 @@ def main():
                 items = data.get("list", [])
                 payload = []
                 for it in items:
+                    val = safe_float(it.get("thstrm_amount"))
+                    
+                    # --- Sanity Check (1,000조 초과 감지) ---
+                    if val is not None and abs(val) > 1e15:
+                        print(f"⚠️  [Sanity Check] 비정상 수치 감지: {corp_code} {it.get('account_nm')} = {val:,}")
+                    
                     payload.append((
                         corp_code,
                         int(year),
@@ -214,7 +220,7 @@ def main():
                         str(fs_div),
                         it.get("sj_div"),            # BS/IS/CIS/CF/SCE [2](https://futureseed.tistory.com/76)
                         it.get("account_nm"),
-                        safe_float(it.get("thstrm_amount")),  # 당기금액 [2](https://futureseed.tistory.com/76)
+                        val,  # 당기금액 [2](https://futureseed.tistory.com/76)
                     ))
 
                 if payload:
