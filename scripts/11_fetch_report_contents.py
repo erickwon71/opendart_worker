@@ -37,15 +37,25 @@ def init_db():
     conn.close()
 
 def get_pending_reports():
+    # DuckDB에서 상위 기업 corp_code를 가져와서 SQLite 쿼리에 활용
+    import duckdb
+    con_duck = duckdb.connect("data/analytics.duckdb")
+    top_corps = con_duck.execute("SELECT DISTINCT corp_code FROM mart_score_combined_annual ORDER BY combined_score DESC LIMIT 50").df()["corp_code"].tolist()
+    con_duck.close()
+    
+    top_corps_str = ",".join([f"'{c}'" for c in top_corps])
+
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    # 사업보고서 위주로 먼저 수집
-    cur.execute("""
+    # 상위 기업 리포트 우선 + PENDING/FAILED 재시도 포함
+    cur.execute(f"""
     SELECT rcept_no 
     FROM fact_filing 
-    WHERE (report_nm LIKE '%사업보고서 (2023.12)%' OR report_nm LIKE '%사업보고서 (2024.12)%')
+    WHERE (report_nm LIKE '%사업보고서%')
       AND rcept_no NOT IN (SELECT rcept_no FROM fact_report_download WHERE status='DONE')
-    LIMIT 100 -- 테스트를 위해 100개씩 진행
+      AND corp_code IN ({top_corps_str})
+    ORDER BY rcept_dt DESC
+    LIMIT 100
     """)
     rows = cur.fetchall()
     conn.close()

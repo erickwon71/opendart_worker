@@ -51,9 +51,10 @@ env/
 log/
 
 # Data
-opendart.sqlite
-analytics.duckdb
+data/opendart.sqlite
+data/analytics.duckdb
 data/raw/filings
+data/raw/reports
 
 # Output
 output/
