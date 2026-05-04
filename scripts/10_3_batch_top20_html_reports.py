@@ -50,15 +50,19 @@ con.execute(f"ATTACH '{SQLITE_PATH}' AS sdb (TYPE SQLITE);")
 # 최신 연도 확인
 latest_year = con.execute("SELECT MAX(year) FROM mart_score_combined_annual").fetchone()[0]
 
-# 상위 기업 리스트 추출 (정성 요약이 있는 경우 우선순위 체감 가능)
+# 상위 기업 리스트 추출 (정성 요약, 보정 여부, 수주 잔고 포함)
 top = con.execute("""
 SELECT
   a.corp_code, dc.corp_name, a.fs_div, a.combined_score, 
-  f.rcept_no, s.summary_json
+  f.rcept_no, s.summary_json,
+  u.correction_factor,
+  b.backlog_amt
 FROM mart_score_combined_annual a
 LEFT JOIN sdb.dim_company dc ON a.corp_code = dc.corp_code
 LEFT JOIN sdb.fact_filing f ON a.corp_code = f.corp_code AND f.report_nm LIKE '%사업보고서%'
 LEFT JOIN sdb.fact_report_analyst_summary s ON f.rcept_no = s.rcept_no
+LEFT JOIN sdb.dim_unit_correction u ON a.corp_code = u.corp_code AND a.year = u.bsns_year
+LEFT JOIN sdb.mart_order_backlog b ON a.corp_code = b.corp_code AND a.year = b.bsns_year
 WHERE a.year = ?
 ORDER BY a.combined_score DESC
 LIMIT ?
@@ -72,7 +76,25 @@ print(f"✅ Top {len(top)} 기업 로드 완료 (기준 연도: {latest_year})")
 for idx, row in top.iterrows():
     corp_code, corp_name, fs_div = row["corp_code"], row["corp_name"], row["fs_div"]
     rcept_no, summary_json = row["rcept_no"], row["summary_json"]
+    correction_factor = row["correction_factor"]
+    backlog_amt = row["backlog_amt"]
     rank = idx + 1
+    
+    # ---------------- 보정 및 잔고 안내 ----------------
+    unit_warning_html = ""
+    if correction_factor and correction_factor != 1.0:
+        unit_warning_html = f'<div class="tag tag-neg" style="margin-bottom:10px;">⚠️ 데이터 단위 보정됨 (x{correction_factor})</div>'
+
+    backlog_html = ""
+    if pd.notna(backlog_amt) and backlog_amt > 0:
+        # 가시성 지표 계산 (잔고 / 최근 매출)
+        backlog_html = f"""
+        <div class="analyst-note" style="background:#f0fff4; border-left-color:#48bb78;">
+            <h3>📊 Revenue Visibility</h3>
+            <p><b>수주 잔고:</b> ₩{backlog_amt/1e8:,.1f} 억 원</p>
+            <p>미래 매출 확보액이 확인되어 향후 실적 가시성이 높습니다.</p>
+        </div>
+        """
     
     # 1) 재무 데이터 로드 (조정 이익 포함)
     df = con.execute("""
@@ -190,7 +212,9 @@ for idx, row in top.iterrows():
             <a href="{dart_link}" target="_blank" class="trace-link">🔗 원문 공시 보기 (DART)</a>
         </h1>
         
+        {unit_warning_html}
         {summary_html}
+        {backlog_html}
         
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
             {product_chart_html}
