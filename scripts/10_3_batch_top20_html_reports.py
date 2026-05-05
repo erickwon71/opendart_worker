@@ -50,21 +50,29 @@ con.execute(f"ATTACH '{SQLITE_PATH}' AS sdb (TYPE SQLITE);")
 # 최신 연도 확인
 latest_year = con.execute("SELECT MAX(year) FROM mart_score_combined_annual").fetchone()[0]
 
-# 상위 기업 리스트 추출 (정성 요약, 보정 여부, 수주 잔고 포함)
+# 상위 기업 리스트 추출 (정성 요약, 보정 여부, 수주 잔고 포함 + 연결/별도 중복 제거)
 top = con.execute("""
-SELECT
-  a.corp_code, dc.corp_name, a.fs_div, a.combined_score, 
-  f.rcept_no, s.summary_json,
-  u.correction_factor,
-  b.backlog_amt
-FROM mart_score_combined_annual a
-LEFT JOIN sdb.dim_company dc ON a.corp_code = dc.corp_code
-LEFT JOIN sdb.fact_filing f ON a.corp_code = f.corp_code AND f.report_nm LIKE '%사업보고서%'
-LEFT JOIN sdb.fact_report_analyst_summary s ON f.rcept_no = s.rcept_no
-LEFT JOIN sdb.dim_unit_correction u ON a.corp_code = u.corp_code AND a.year = u.bsns_year
-LEFT JOIN sdb.mart_order_backlog b ON a.corp_code = b.corp_code AND a.year = b.bsns_year
-WHERE a.year = ?
-ORDER BY a.combined_score DESC
+WITH ranked_scores AS (
+  SELECT
+    a.corp_code, dc.corp_name, a.fs_div, a.combined_score, 
+    f.rcept_no, s.summary_json,
+    u.correction_factor,
+    b.backlog_amt,
+    ROW_NUMBER() OVER (
+      PARTITION BY a.corp_code 
+      ORDER BY CASE WHEN a.fs_div = 'CFS' THEN 1 ELSE 2 END ASC
+    ) as fs_priority
+  FROM mart_score_combined_annual a
+  LEFT JOIN sdb.dim_company dc ON a.corp_code = dc.corp_code
+  LEFT JOIN sdb.fact_filing f ON a.corp_code = f.corp_code AND f.report_nm LIKE '%사업보고서%'
+  LEFT JOIN sdb.fact_report_analyst_summary s ON f.rcept_no = s.rcept_no
+  LEFT JOIN sdb.dim_unit_correction u ON a.corp_code = u.corp_code AND a.year = u.bsns_year
+  LEFT JOIN sdb.mart_order_backlog b ON a.corp_code = b.corp_code AND a.year = b.bsns_year
+  WHERE a.year = ?
+)
+SELECT * FROM ranked_scores
+WHERE fs_priority = 1
+ORDER BY combined_score DESC
 LIMIT ?
 """, [latest_year, TOPN]).df()
 
